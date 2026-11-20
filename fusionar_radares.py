@@ -22,14 +22,31 @@ def haversine_metros(lat1, lon1, lat2, lon2):
     return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def extraer_velocidad(valor):
-    if not valor:
-        return None
-    match = re.search(r"(\d{2,3})", str(valor))
+def extraer_velocidad(props):
+    texto = json.dumps(props, ensure_ascii=False)
+    for clave in ["limit", "speed_limit", "maxspeed", "velocidad", "speed"]:
+        val = props.get(clave)
+        if val:
+            match = re.search(r"(\d{2,3})", str(val))
+            if match:
+                vel = int(match.group(1))
+                if 20 <= vel <= 130:
+                    return vel
+    match = re.search(r"\b(30|40|50|60|70|80|90|100|110|120)\b", texto)
     if match:
-        vel = int(match.group(1))
-        return vel if 20 <= vel <= 130 else None
+        return int(match.group(1))
     return None
+
+
+def clasificar_tipo(props):
+    texto = json.dumps(props, ensure_ascii=False).lower()
+    if "tramo" in texto or "average_speed" in texto or "section" in texto:
+        return "TRAMO"
+    if "semaforo" in texto or "semáforo" in texto or "traffic_signals" in texto or "foto-rojo" in texto:
+        return "SEMAFORO"
+    if "movil" in texto or "móvil" in texto:
+        return "MOVIL"
+    return "FIJO"
 
 
 def descargar_json(url):
@@ -48,19 +65,14 @@ def cargar_radares_anunciados():
             coords = geom.get("coordinates", [])
 
             if geom.get("type") == "Point" and len(coords) >= 2:
-                lon = float(coords[0])
-                lat = float(coords[1])
-                tipo_raw = str(props.get("type", "")).lower()
-                tipo = "TRAMO" if "tramo" in tipo_raw else "FIJO"
-                if "movil" in tipo_raw or "móvil" in tipo_raw:
-                    tipo = "MOVIL"
-
+                lon = float(coords)
+                lat = float(coords)
                 radares.append({
                     "lat": round(lat, 6),
                     "lon": round(lon, 6),
-                    "speed": extraer_velocidad(props.get("limit") or props.get("speed_limit")),
-                    "type": tipo,
-                    "source": props.get("source", "ANUNCIADOS")
+                    "speed": extraer_velocidad(props),
+                    "type": clasificar_tipo(props),
+                    "source": str(props.get("source", "ANUNCIADOS"))
                 })
     except Exception as e:
         print(f"Aviso: No se pudo cargar Radares Anunciados: {e}")
@@ -105,18 +117,23 @@ def cargar_osm_local():
         for feat in data.get("features", []):
             geom = feat.get("geometry", {})
             props = feat.get("properties", {})
+            tipo_geom = geom.get("type")
             coords = geom.get("coordinates", [])
-            if geom.get("type") == "Point" and len(coords) >= 2:
-                lon = float(coords[0])
-                lat = float(coords[1])
-                velocidad = extraer_velocidad(props.get("maxspeed"))
-                tipo = "SEMAFORO" if "traffic_signals" in str(props.get("enforcement", "")) else "FIJO"
 
+            lon, lat = None, None
+            if tipo_geom == "Point" and len(coords) >= 2:
+                lon, lat = float(coords), float(coords)
+            elif tipo_geom == "LineString" and len(coords) >= 1 and len(coords) >= 2:
+                lon, lat = float(coords), float(coords)
+            elif tipo_geom == "MultiLineString" and len(coords) >= 1 and len(coords) >= 1:
+                lon, lat = float(coords), float(coords)
+
+            if lat is not None and lon is not None:
                 radares.append({
                     "lat": round(lat, 6),
                     "lon": round(lon, 6),
-                    "speed": velocidad,
-                    "type": tipo,
+                    "speed": extraer_velocidad(props),
+                    "type": clasificar_tipo(props),
                     "source": "OSM"
                 })
     except Exception as e:
@@ -138,6 +155,8 @@ def fusionar(listas_priorizadas):
                     es_duplicado = True
                     if existente["speed"] is None and candidato["speed"] is not None:
                         existente["speed"] = candidato["speed"]
+                    if existente["type"] == "FIJO" and candidato["type"] != "FIJO":
+                        existente["type"] = candidato["type"]
                     break
 
             if not es_duplicado:
@@ -147,24 +166,23 @@ def fusionar(listas_priorizadas):
 
 
 if __name__ == "__main__":
-    print("Descargando Radares Anunciados...")
     anunciados = cargar_radares_anunciados()
-    print(f" -> {len(anunciados)} puntos")
-
-    print("Descargando NAP DGT...")
     dgt = cargar_nap_dgt()
-    print(f" -> {len(dgt)} puntos")
-
-    print("Cargando extracto OSM...")
     osm = cargar_osm_local()
-    print(f" -> {len(osm)} puntos")
 
     resultado = fusionar([anunciados, dgt, osm])
-    print(f"Total radares únicos tras deduplicación: {len(resultado)}")
+
+    conteo_tipos = {}
+    for r in resultado:
+        conteo_tipos[r["type"]] = conteo_tipos.get(r["type"], 0) + 1
+
+    print(f"Anunciados: {len(anunciados)} | DGT: {len(dgt)} | OSM: {len(osm)}")
+    print(f"Total únicos: {len(resultado)} -> Desglose por tipo: {conteo_tipos}")
 
     salida = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "total": len(resultado),
+        "by_type": conteo_tipos,
         "radars": resultado
     }
 
