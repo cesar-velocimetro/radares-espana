@@ -5,8 +5,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
-URL_RADARES_ANUNCIADOS = "https://github.io"
-URL_NAP_DGT = "https://dgt.es"
+URL_RADARES_ANUNCIADOS = "https://" + "geiserx.github.io" + "/radares-anunciados-ha/feed.geojson"
+URL_NAP_DGT = "https://" + "nap.dgt.es" + "/datex2/dgt/PredefinedLocationsPublication/radares/content.xml"
 ARCHIVO_OSM_LOCAL = "radares_osm.geojson"
 ARCHIVO_SALIDA = "radares_unificados.json"
 
