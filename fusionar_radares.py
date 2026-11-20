@@ -44,8 +44,10 @@ def clasificar_tipo(props):
 
     if enforcement == "stop" or '"stop"' in texto or "control de stop" in texto or "radar de stop" in texto:
         return "STOP"
+    if "fin tramo" in texto or "final tramo" in texto or "fin de tramo" in texto:
+        return "TRAMO_FIN"
     if "tramo" in texto or "average_speed" in texto or "section" in texto:
-        return "TRAMO"
+        return "TRAMO_INICIO"
     if "semaforo" in texto or "semáforo" in texto or "traffic_signals" in texto or "foto-rojo" in texto:
         return "SEMAFORO"
     if "movil" in texto or "móvil" in texto:
@@ -123,30 +125,41 @@ def cargar_osm_local():
             props = feat.get("properties", {})
             tipo_geom = geom.get("type")
             coords = geom.get("coordinates", [])
+            tipo_radar = clasificar_tipo(props)
+            velocidad = extraer_velocidad(props)
 
-            lon, lat = None, None
+            puntos_extraidos = []
+
             if tipo_geom == "Point" and len(coords) >= 2:
-                lon = float(coords.__getitem__(0))
-                lat = float(coords.__getitem__(1))
-            elif tipo_geom == "LineString" and len(coords) >= 1:
-                primer_punto = coords.__getitem__(0)
-                if len(primer_punto) >= 2:
-                    lon = float(primer_punto.__getitem__(0))
-                    lat = float(primer_punto.__getitem__(1))
+                puntos_extraidos.append((float(coords.__getitem__(1)), float(coords.__getitem__(0)), tipo_radar))
+
+            elif tipo_geom == "LineString" and len(coords) >= 2:
+                p_ini = coords.__getitem__(0)
+                p_fin = coords.__getitem__(len(coords) - 1)
+                if tipo_radar == "TRAMO_INICIO":
+                    puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), "TRAMO_INICIO"))
+                    puntos_extraidos.append((float(p_fin.__getitem__(1)), float(p_fin.__getitem__(0)), "TRAMO_FIN"))
+                else:
+                    puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), tipo_radar))
+
             elif tipo_geom == "MultiLineString" and len(coords) >= 1:
                 primera_linea = coords.__getitem__(0)
-                if len(primera_linea) >= 1:
-                    primer_punto = primera_linea.__getitem__(0)
-                    if len(primer_punto) >= 2:
-                        lon = float(primer_punto.__getitem__(0))
-                        lat = float(primer_punto.__getitem__(1))
+                ultima_linea = coords.__getitem__(len(coords) - 1)
+                if len(primera_linea) >= 1 and len(ultima_linea) >= 1:
+                    p_ini = primera_linea.__getitem__(0)
+                    p_fin = ultima_linea.__getitem__(len(ultima_linea) - 1)
+                    if tipo_radar == "TRAMO_INICIO":
+                        puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), "TRAMO_INICIO"))
+                        puntos_extraidos.append((float(p_fin.__getitem__(1)), float(p_fin.__getitem__(0)), "TRAMO_FIN"))
+                    else:
+                        puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), tipo_radar))
 
-            if lat is not None and lon is not None:
+            for lat, lon, tipo_final in puntos_extraidos:
                 radares.append({
                     "lat": round(lat, 6),
                     "lon": round(lon, 6),
-                    "speed": extraer_velocidad(props),
-                    "type": clasificar_tipo(props),
+                    "speed": velocidad,
+                    "type": tipo_final,
                     "source": "OSM"
                 })
     except Exception as e:
@@ -165,6 +178,10 @@ def fusionar(listas_priorizadas):
                     candidato.get("lat"), candidato.get("lon")
                 )
                 if dist <= DISTANCIA_DEDUPLICACION_METROS:
+                    # No fusionar un inicio de tramo con un fin de tramo
+                    if {existente.get("type"), candidato.get("type")} == {"TRAMO_INICIO", "TRAMO_FIN"}:
+                        continue
+
                     es_duplicado = True
                     if existente.get("speed") is None and candidato.get("speed") is not None:
                         existente["speed"] = candidato.get("speed")
@@ -190,7 +207,7 @@ if __name__ == "__main__":
         t = r.get("type")
         conteo_tipos[t] = conteo_tipos.get(t, 0) + 1
 
-    print(f"Anunciados: {len(anunciados)} | DGT: {len(dgt)} | OSM: {len(osm)}")
+    print(f"Anunciados: {len(anunciados)} | DGT: {len(dgt)} | OSM (Iberia): {len(osm)}")
     print(f"Total únicos: {len(resultado)} -> Desglose por tipo: {conteo_tipos}")
 
     salida = {
