@@ -24,7 +24,7 @@ def haversine_metros(lat1, lon1, lat2, lon2):
 
 def extraer_velocidad(props):
     texto = json.dumps(props, ensure_ascii=False)
-    for clave in ["limit", "speed_limit", "maxspeed", "velocidad", "speed"]:
+    for clave in ("limit", "speed_limit", "maxspeed", "velocidad", "speed"):
         val = props.get(clave)
         if val:
             match = re.search(r"(\d{2,3})", str(val))
@@ -40,6 +40,10 @@ def extraer_velocidad(props):
 
 def clasificar_tipo(props):
     texto = json.dumps(props, ensure_ascii=False).lower()
+    enforcement = str(props.get("enforcement", "")).lower()
+
+    if enforcement == "stop" or '"stop"' in texto or "control de stop" in texto or "radar de stop" in texto:
+        return "STOP"
     if "tramo" in texto or "average_speed" in texto or "section" in texto:
         return "TRAMO"
     if "semaforo" in texto or "semáforo" in texto or "traffic_signals" in texto or "foto-rojo" in texto:
@@ -65,8 +69,8 @@ def cargar_radares_anunciados():
             coords = geom.get("coordinates", [])
 
             if geom.get("type") == "Point" and len(coords) >= 2:
-                lon = float(coords)
-                lat = float(coords)
+                lon = float(coords.__getitem__(0))
+                lat = float(coords.__getitem__(1))
                 radares.append({
                     "lat": round(lat, 6),
                     "lon": round(lon, 6),
@@ -122,11 +126,20 @@ def cargar_osm_local():
 
             lon, lat = None, None
             if tipo_geom == "Point" and len(coords) >= 2:
-                lon, lat = float(coords), float(coords)
-            elif tipo_geom == "LineString" and len(coords) >= 1 and len(coords) >= 2:
-                lon, lat = float(coords), float(coords)
-            elif tipo_geom == "MultiLineString" and len(coords) >= 1 and len(coords) >= 1:
-                lon, lat = float(coords), float(coords)
+                lon = float(coords.__getitem__(0))
+                lat = float(coords.__getitem__(1))
+            elif tipo_geom == "LineString" and len(coords) >= 1:
+                primer_punto = coords.__getitem__(0)
+                if len(primer_punto) >= 2:
+                    lon = float(primer_punto.__getitem__(0))
+                    lat = float(primer_punto.__getitem__(1))
+            elif tipo_geom == "MultiLineString" and len(coords) >= 1:
+                primera_linea = coords.__getitem__(0)
+                if len(primera_linea) >= 1:
+                    primer_punto = primera_linea.__getitem__(0)
+                    if len(primer_punto) >= 2:
+                        lon = float(primer_punto.__getitem__(0))
+                        lat = float(primer_punto.__getitem__(1))
 
             if lat is not None and lon is not None:
                 radares.append({
@@ -148,15 +161,15 @@ def fusionar(listas_priorizadas):
             es_duplicado = False
             for existente in unificados:
                 dist = haversine_metros(
-                    existente["lat"], existente["lon"],
-                    candidato["lat"], candidato["lon"]
+                    existente.get("lat"), existente.get("lon"),
+                    candidato.get("lat"), candidato.get("lon")
                 )
                 if dist <= DISTANCIA_DEDUPLICACION_METROS:
                     es_duplicado = True
-                    if existente["speed"] is None and candidato["speed"] is not None:
-                        existente["speed"] = candidato["speed"]
-                    if existente["type"] == "FIJO" and candidato["type"] != "FIJO":
-                        existente["type"] = candidato["type"]
+                    if existente.get("speed") is None and candidato.get("speed") is not None:
+                        existente["speed"] = candidato.get("speed")
+                    if existente.get("type") == "FIJO" and candidato.get("type") != "FIJO":
+                        existente["type"] = candidato.get("type")
                     break
 
             if not es_duplicado:
@@ -170,11 +183,12 @@ if __name__ == "__main__":
     dgt = cargar_nap_dgt()
     osm = cargar_osm_local()
 
-    resultado = fusionar([anunciados, dgt, osm])
+    resultado = fusionar((anunciados, dgt, osm))
 
     conteo_tipos = {}
     for r in resultado:
-        conteo_tipos[r["type"]] = conteo_tipos.get(r["type"], 0) + 1
+        t = r.get("type")
+        conteo_tipos[t] = conteo_tipos.get(t, 0) + 1
 
     print(f"Anunciados: {len(anunciados)} | DGT: {len(dgt)} | OSM: {len(osm)}")
     print(f"Total únicos: {len(resultado)} -> Desglose por tipo: {conteo_tipos}")
