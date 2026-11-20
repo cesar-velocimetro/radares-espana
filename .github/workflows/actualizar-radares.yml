@@ -48,12 +48,14 @@ jobs:
       - name: Guardar radares_unificados.json en el repositorio
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@://github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add radares_unificados.json
           git commit -m "Actualización automática de radares Iberia" || exit 0
+          git pull --rebase --autostash origin main
           git push
 
       - name: Limpiar ejecuciones antiguas de Actions
+        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
