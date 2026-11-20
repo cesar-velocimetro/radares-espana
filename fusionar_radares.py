@@ -113,7 +113,6 @@ def cargar_nap_dgt():
         print(f"Aviso: No se pudo cargar NAP DGT: {e}")
     return radares
 
-
 def cargar_osm_local():
     radares = []
     try:
@@ -153,6 +152,28 @@ def cargar_osm_local():
                         puntos_extraidos.append((float(p_fin.__getitem__(1)), float(p_fin.__getitem__(0)), "TRAMO_FIN"))
                     else:
                         puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), tipo_radar))
+
+            elif tipo_geom == "GeometryCollection":
+                sub_puntos = []
+                for sub_geom in geom.get("geometries", []):
+                    st = sub_geom.get("type")
+                    sc = sub_geom.get("coordinates", [])
+                    if st == "Point" and len(sc) >= 2:
+                        sub_puntos.append((float(sc.__getitem__(1)), float(sc.__getitem__(0))))
+                    elif st == "LineString" and len(sc) >= 2:
+                        p0 = sc.__getitem__(0)
+                        p1 = sc.__getitem__(len(sc) - 1)
+                        sub_puntos.append((float(p0.__getitem__(1)), float(p0.__getitem__(0))))
+                        sub_puntos.append((float(p1.__getitem__(1)), float(p1.__getitem__(0))))
+
+                if len(sub_puntos) >= 2 and tipo_radar == "TRAMO_INICIO":
+                    p_ini = sub_puntos.__getitem__(0)
+                    p_fin = sub_puntos.__getitem__(len(sub_puntos) - 1)
+                    puntos_extraidos.append((p_ini.__getitem__(0), p_ini.__getitem__(1), "TRAMO_INICIO"))
+                    puntos_extraidos.append((p_fin.__getitem__(0), p_fin.__getitem__(1), "TRAMO_FIN"))
+                elif len(sub_puntos) >= 1:
+                    p_ini = sub_puntos.__getitem__(0)
+                    puntos_extraidos.append((p_ini.__getitem__(0), p_ini.__getitem__(1), tipo_radar))
 
             for lat, lon, tipo_final in puntos_extraidos:
                 radares.append({
