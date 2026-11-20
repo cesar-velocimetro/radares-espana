@@ -44,7 +44,7 @@ def clasificar_tipo(props):
 
     if enforcement == "stop" or '"stop"' in texto or "control de stop" in texto or "radar de stop" in texto:
         return "STOP"
-    if "fin tramo" in texto or "final tramo" in texto or "fin de tramo" in texto:
+    if any(p in texto for p in ("fin tramo", "final tramo", "fin de tramo", "final de tramo", "salida tramo", "end")):
         return "TRAMO_FIN"
     if "tramo" in texto or "average_speed" in texto or "section" in texto:
         return "TRAMO_INICIO"
@@ -112,6 +112,7 @@ def cargar_nap_dgt():
     except Exception as e:
         print(f"Aviso: No se pudo cargar NAP DGT: {e}")
     return radares
+
 
 def cargar_osm_local():
     radares = []
@@ -199,7 +200,6 @@ def fusionar(listas_priorizadas):
                     candidato.get("lat"), candidato.get("lon")
                 )
                 if dist <= DISTANCIA_DEDUPLICACION_METROS:
-                    # No fusionar un inicio de tramo con un fin de tramo
                     if {existente.get("type"), candidato.get("type")} == {"TRAMO_INICIO", "TRAMO_FIN"}:
                         continue
 
@@ -238,5 +238,3 @@ if __name__ == "__main__":
         "radars": resultado
     }
 
-    with open(ARCHIVO_SALIDA, "w", encoding="utf-8") as f:
-        json.dump(salida, f, ensure_ascii=False, separators=(",", ":"))
