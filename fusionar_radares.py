@@ -141,7 +141,6 @@ def cargar_osm_local():
         print(f"Aviso: No se pudo leer el GeoJSON de OSM: {e}")
     return radares
 
-
 def emparejar_tramos(radares):
     tramos = [r for r in radares if r.get("type") in ("TRAMO_INICIO", "TRAMO_FIN")]
     ya_emparejados = set()
@@ -153,7 +152,7 @@ def emparejar_tramos(radares):
             continue
 
         mejor_pareja = None
-        mejor_dist = 35000.0  # Máximo 35 km de longitud de tramo
+        mejor_dist = 35000.0
 
         for j in range(i + 1, len(tramos)):
             r2 = tramos.__getitem__(j)
@@ -162,7 +161,6 @@ def emparejar_tramos(radares):
                 continue
 
             dist = haversine_metros(r1.get("lat"), r1.get("lon"), r2.get("lat"), r2.get("lon"))
-            # Un tramo real mide entre 400 m y 35 km, y ambos puntos comparten velocidad límite
             if 400.0 <= dist <= mejor_dist and r1.get("speed") == r2.get("speed"):
                 mejor_dist = dist
                 mejor_pareja = r2
@@ -174,6 +172,12 @@ def emparejar_tramos(radares):
             mejor_pareja["pair_id"] = r1.get("id")
             ya_emparejados.add(id1)
             ya_emparejados.add(mejor_pareja.get("id"))
+
+    # Los puntos de tramo que no tienen pareja en la fuente pasan a FIJO para que nunca falte un TRAMO_FIN
+    for r in tramos:
+        if r.get("id") not in ya_emparejados:
+            r["type"] = "FIJO"
+
 
 
 def fusionar(listas_priorizadas):
