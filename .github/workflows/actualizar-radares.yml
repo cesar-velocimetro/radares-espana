@@ -40,14 +40,12 @@ jobs:
             curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -A "RadaresIberiaSync/1.0" "${URL2}" -o "${PAIS}.osm.pbf"
             
             osmium tags-filter --add-referenced "${PAIS}.osm.pbf" ${FILTROS} -o "rad_${PAIS}.osm.pbf"
-
             rm "${PAIS}.osm.pbf"
           done
           
           osmium merge rad_spain.osm.pbf rad_portugal.osm.pbf rad_andorra.osm.pbf -o radares_iberia.osm.pbf
           osmium export radares_iberia.osm.pbf -o radares_osm.geojson
           rm rad_*.osm.pbf radares_iberia.osm.pbf
-
 
       - name: Ejecutar fusión y deduplicación
         run: |
@@ -57,7 +55,7 @@ jobs:
       - name: Guardar radares_unificados.json en el repositorio
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@://github.com"
           git add radares_unificados.json
           git commit -m "Actualización automática de radares Iberia" || exit 0
           git pull --rebase --autostash origin main
