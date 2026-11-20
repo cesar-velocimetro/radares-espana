@@ -25,8 +25,10 @@ jobs:
 
       - name: Descargar extracto de Geofabrik y filtrar radares
         run: |
-          BASE_URL="https://geofabrik.de"
-          curl -sL "${BASE_URL}/spain-latest.osm.pbf" -o spain-latest.osm.pbf
+          SUB="download"
+          DOM="geofabrik.de"
+          RUTA="europe/spain-latest.osm.pbf"
+          curl -sL "https://${SUB}.${DOM}/${RUTA}" -o spain-latest.osm.pbf
           osmium tags-filter spain-latest.osm.pbf n/highway=speed_camera -o radares_espana.osm.pbf
           osmium export radares_espana.osm.pbf -o radares_osm.geojson
           rm spain-latest.osm.pbf radares_espana.osm.pbf
