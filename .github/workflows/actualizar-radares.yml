@@ -23,15 +23,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Descargar extracto de Iberia y filtrar radares
+      - name: Descargar extractos de Iberia y filtrar radares
         run: |
           SUB="download"
           DOM="geofabrik.de"
-          RUTA="europe/iberia-latest.osm.pbf"
-          curl -fL --retry 5 --retry-delay 10 --connect-timeout 30 "https://${SUB}.${DOM}/${RUTA}" -o iberia-latest.osm.pbf
-          osmium tags-filter iberia-latest.osm.pbf n/highway=speed_camera n/enforcement=traffic_signals n/enforcement=stop r/enforcement=average_speed r/enforcement=traffic_signals r/enforcement=maxspeed r/enforcement=stop -o radares_iberia.osm.pbf
+          FILTROS="n/highway=speed_camera n/enforcement=traffic_signals n/enforcement=stop r/enforcement=average_speed r/enforcement=traffic_signals r/enforcement=maxspeed r/enforcement=stop"
+          
+          for PAIS in spain portugal andorra; do
+            curl -fL --retry 5 --retry-delay 10 --connect-timeout 30 "https://${SUB}.${DOM}/europe/${PAIS}-latest.osm.pbf" -o "${PAIS}.osm.pbf"
+            osmium tags-filter "${PAIS}.osm.pbf" ${FILTROS} -o "rad_${PAIS}.osm.pbf"
+            rm "${PAIS}.osm.pbf"
+          done
+          
+          osmium merge rad_spain.osm.pbf rad_portugal.osm.pbf rad_andorra.osm.pbf -o radares_iberia.osm.pbf
           osmium export radares_iberia.osm.pbf -o radares_osm.geojson
-          rm iberia-latest.osm.pbf radares_iberia.osm.pbf
+          rm rad_*.osm.pbf radares_iberia.osm.pbf
+
 
       - name: Ejecutar fusión y deduplicación
         run: |
