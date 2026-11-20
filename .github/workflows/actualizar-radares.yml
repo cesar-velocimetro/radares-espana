@@ -26,12 +26,19 @@ jobs:
 
       - name: Descargar extractos de Iberia y filtrar radares
         run: |
-          SUB="download"
-          DOM="geofabrik.de"
+          SUB1="download"
+          DOM1="geofabrik.de"
+          SUB2="download"
+          DOM2="openstreetmap.fr"
           FILTROS="n/highway=speed_camera n/enforcement=traffic_signals n/enforcement=stop r/enforcement=average_speed r/enforcement=traffic_signals r/enforcement=maxspeed r/enforcement=stop"
           
           for PAIS in spain portugal andorra; do
-            curl -fL --retry 5 --retry-delay 10 --connect-timeout 30 "https://${SUB}.${DOM}/europe/${PAIS}-latest.osm.pbf" -o "${PAIS}.osm.pbf"
+            URL1="https://${SUB1}.${DOM1}/europe/${PAIS}-latest.osm.pbf"
+            URL2="https://${SUB2}.${DOM2}/extracts/europe/${PAIS}-latest.osm.pbf"
+            
+            curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -A "RadaresIberiaSync/1.0" "${URL1}" -o "${PAIS}.osm.pbf" || \
+            curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -A "RadaresIberiaSync/1.0" "${URL2}" -o "${PAIS}.osm.pbf"
+            
             osmium tags-filter "${PAIS}.osm.pbf" ${FILTROS} -o "rad_${PAIS}.osm.pbf"
             rm "${PAIS}.osm.pbf"
           done
@@ -39,6 +46,7 @@ jobs:
           osmium merge rad_spain.osm.pbf rad_portugal.osm.pbf rad_andorra.osm.pbf -o radares_iberia.osm.pbf
           osmium export radares_iberia.osm.pbf -o radares_osm.geojson
           rm rad_*.osm.pbf radares_iberia.osm.pbf
+
 
       - name: Ejecutar fusión y deduplicación
         run: |
