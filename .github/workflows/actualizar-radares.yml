@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   actualizar:
@@ -39,7 +40,6 @@ jobs:
           osmium export radares_iberia.osm.pbf -o radares_osm.geojson
           rm rad_*.osm.pbf radares_iberia.osm.pbf
 
-
       - name: Ejecutar fusión y deduplicación
         run: |
           python fusionar_radares.py
@@ -52,3 +52,11 @@ jobs:
           git add radares_unificados.json
           git commit -m "Actualización automática de radares Iberia" || exit 0
           git push
+
+      - name: Limpiar ejecuciones antiguas de Actions
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 1
