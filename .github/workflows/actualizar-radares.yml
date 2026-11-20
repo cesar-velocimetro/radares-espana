@@ -22,10 +22,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          
+
       - name: Descargar extracto de Geofabrik y filtrar radares
         run: |
-          wget -q https://geofabrik.de
+          BASE_URL="https://geofabrik.de"
+          curl -sL "${BASE_URL}/spain-latest.osm.pbf" -o spain-latest.osm.pbf
           osmium tags-filter spain-latest.osm.pbf n/highway=speed_camera -o radares_espana.osm.pbf
           osmium export radares_espana.osm.pbf -o radares_osm.geojson
           rm spain-latest.osm.pbf radares_espana.osm.pbf
