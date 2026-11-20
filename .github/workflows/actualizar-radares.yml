@@ -23,15 +23,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Descargar extracto de Geofabrik y filtrar radares
+      - name: Descargar extracto de Iberia y filtrar radares
         run: |
           SUB="download"
           DOM="geofabrik.de"
-          RUTA="europe/spain-latest.osm.pbf"
-          curl -fL --retry 5 --retry-delay 10 --connect-timeout 30 "https://${SUB}.${DOM}/${RUTA}" -o spain-latest.osm.pbf
-          osmium tags-filter spain-latest.osm.pbf n/highway=speed_camera n/enforcement=traffic_signals n/enforcement=stop r/enforcement=average_speed r/enforcement=stop -o radares_espana.osm.pbf
-          osmium export radares_espana.osm.pbf -o radares_osm.geojson
-          rm spain-latest.osm.pbf radares_espana.osm.pbf
+          RUTA="europe/iberia-latest.osm.pbf"
+          curl -fL --retry 5 --retry-delay 10 --connect-timeout 30 "https://${SUB}.${DOM}/${RUTA}" -o iberia-latest.osm.pbf
+          osmium tags-filter iberia-latest.osm.pbf n/highway=speed_camera n/enforcement=traffic_signals n/enforcement=stop r/enforcement=average_speed r/enforcement=traffic_signals r/enforcement=maxspeed r/enforcement=stop -o radares_iberia.osm.pbf
+          osmium export radares_iberia.osm.pbf -o radares_osm.geojson
+          rm iberia-latest.osm.pbf radares_iberia.osm.pbf
 
       - name: Ejecutar fusión y deduplicación
         run: |
@@ -43,5 +43,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@://github.com"
           git add radares_unificados.json
-          git commit -m "Actualización automática de radares" || exit 0
+          git commit -m "Actualización automática de radares Iberia" || exit 0
           git push
