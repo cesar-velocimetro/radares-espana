@@ -44,7 +44,7 @@ def clasificar_tipo(props):
 
     if enforcement == "stop" or '"stop"' in texto or "control de stop" in texto or "radar de stop" in texto:
         return "STOP"
-    if any(p in texto for p in ("fin tramo", "final tramo", "fin de tramo", "final de tramo", "salida tramo", "end")):
+    if any(p in texto for p in ("fin tramo", "final tramo", "fin de tramo", "final de tramo", "salida tramo")):
         return "TRAMO_FIN"
     if "tramo" in texto or "average_speed" in texto or "section" in texto:
         return "TRAMO_INICIO"
@@ -78,7 +78,8 @@ def cargar_radares_anunciados():
                     "lon": round(lon, 6),
                     "speed": extraer_velocidad(props),
                     "type": clasificar_tipo(props),
-                    "source": str(props.get("source", "ANUNCIADOS"))
+                    "source": str(props.get("source", "ANUNCIADOS")),
+                    "_raw": json.dumps(props, ensure_ascii=False).lower()
                 })
     except Exception as e:
         print(f"Aviso: No se pudo cargar Radares Anunciados: {e}")
@@ -128,60 +129,12 @@ def cargar_osm_local():
             tipo_radar = clasificar_tipo(props)
             velocidad = extraer_velocidad(props)
 
-            puntos_extraidos = []
-
             if tipo_geom == "Point" and len(coords) >= 2:
-                puntos_extraidos.append((float(coords.__getitem__(1)), float(coords.__getitem__(0)), tipo_radar))
-
-            elif tipo_geom == "LineString" and len(coords) >= 2:
-                p_ini = coords.__getitem__(0)
-                p_fin = coords.__getitem__(len(coords) - 1)
-                if tipo_radar == "TRAMO_INICIO":
-                    puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), "TRAMO_INICIO"))
-                    puntos_extraidos.append((float(p_fin.__getitem__(1)), float(p_fin.__getitem__(0)), "TRAMO_FIN"))
-                else:
-                    puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), tipo_radar))
-
-            elif tipo_geom == "MultiLineString" and len(coords) >= 1:
-                primera_linea = coords.__getitem__(0)
-                ultima_linea = coords.__getitem__(len(coords) - 1)
-                if len(primera_linea) >= 1 and len(ultima_linea) >= 1:
-                    p_ini = primera_linea.__getitem__(0)
-                    p_fin = ultima_linea.__getitem__(len(ultima_linea) - 1)
-                    if tipo_radar == "TRAMO_INICIO":
-                        puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), "TRAMO_INICIO"))
-                        puntos_extraidos.append((float(p_fin.__getitem__(1)), float(p_fin.__getitem__(0)), "TRAMO_FIN"))
-                    else:
-                        puntos_extraidos.append((float(p_ini.__getitem__(1)), float(p_ini.__getitem__(0)), tipo_radar))
-
-            elif tipo_geom == "GeometryCollection":
-                sub_puntos = []
-                for sub_geom in geom.get("geometries", []):
-                    st = sub_geom.get("type")
-                    sc = sub_geom.get("coordinates", [])
-                    if st == "Point" and len(sc) >= 2:
-                        sub_puntos.append((float(sc.__getitem__(1)), float(sc.__getitem__(0))))
-                    elif st == "LineString" and len(sc) >= 2:
-                        p0 = sc.__getitem__(0)
-                        p1 = sc.__getitem__(len(sc) - 1)
-                        sub_puntos.append((float(p0.__getitem__(1)), float(p0.__getitem__(0))))
-                        sub_puntos.append((float(p1.__getitem__(1)), float(p1.__getitem__(0))))
-
-                if len(sub_puntos) >= 2 and tipo_radar == "TRAMO_INICIO":
-                    p_ini = sub_puntos.__getitem__(0)
-                    p_fin = sub_puntos.__getitem__(len(sub_puntos) - 1)
-                    puntos_extraidos.append((p_ini.__getitem__(0), p_ini.__getitem__(1), "TRAMO_INICIO"))
-                    puntos_extraidos.append((p_fin.__getitem__(0), p_fin.__getitem__(1), "TRAMO_FIN"))
-                elif len(sub_puntos) >= 1:
-                    p_ini = sub_puntos.__getitem__(0)
-                    puntos_extraidos.append((p_ini.__getitem__(0), p_ini.__getitem__(1), tipo_radar))
-
-            for lat, lon, tipo_final in puntos_extraidos:
                 radares.append({
-                    "lat": round(lat, 6),
-                    "lon": round(lon, 6),
+                    "lat": round(float(coords.__getitem__(1)), 6),
+                    "lon": round(float(coords.__getitem__(0)), 6),
                     "speed": velocidad,
-                    "type": tipo_final,
+                    "type": tipo_radar,
                     "source": "OSM"
                 })
     except Exception as e:
@@ -189,10 +142,45 @@ def cargar_osm_local():
     return radares
 
 
+def emparejar_tramos(radares):
+    tramos = [r for r in radares if r.get("type") in ("TRAMO_INICIO", "TRAMO_FIN")]
+    ya_emparejados = set()
+
+    for i in range(len(tramos)):
+        r1 = tramos.__getitem__(i)
+        id1 = r1.get("id")
+        if id1 in ya_emparejados:
+            continue
+
+        mejor_pareja = None
+        mejor_dist = 35000.0  # Máximo 35 km de longitud de tramo
+
+        for j in range(i + 1, len(tramos)):
+            r2 = tramos.__getitem__(j)
+            id2 = r2.get("id")
+            if id2 in ya_emparejados:
+                continue
+
+            dist = haversine_metros(r1.get("lat"), r1.get("lon"), r2.get("lat"), r2.get("lon"))
+            # Un tramo real mide entre 400 m y 35 km, y ambos puntos comparten velocidad límite
+            if 400.0 <= dist <= mejor_dist and r1.get("speed") == r2.get("speed"):
+                mejor_dist = dist
+                mejor_pareja = r2
+
+        if mejor_pareja is not None:
+            r1["type"] = "TRAMO_INICIO"
+            mejor_pareja["type"] = "TRAMO_FIN"
+            r1["pair_id"] = mejor_pareja.get("id")
+            mejor_pareja["pair_id"] = r1.get("id")
+            ya_emparejados.add(id1)
+            ya_emparejados.add(mejor_pareja.get("id"))
+
+
 def fusionar(listas_priorizadas):
     unificados = []
     for lista in listas_priorizadas:
         for candidato in lista:
+            candidato.pop("_raw", None)
             es_duplicado = False
             for existente in unificados:
                 dist = haversine_metros(
@@ -200,9 +188,6 @@ def fusionar(listas_priorizadas):
                     candidato.get("lat"), candidato.get("lon")
                 )
                 if dist <= DISTANCIA_DEDUPLICACION_METROS:
-                    if {existente.get("type"), candidato.get("type")} == {"TRAMO_INICIO", "TRAMO_FIN"}:
-                        continue
-
                     es_duplicado = True
                     if existente.get("speed") is None and candidato.get("speed") is not None:
                         existente["speed"] = candidato.get("speed")
@@ -213,6 +198,8 @@ def fusionar(listas_priorizadas):
             if not es_duplicado:
                 candidato["id"] = len(unificados) + 1
                 unificados.append(candidato)
+
+    emparejar_tramos(unificados)
     return unificados
 
 
@@ -238,3 +225,5 @@ if __name__ == "__main__":
         "radars": resultado
     }
 
+    with open(ARCHIVO_SALIDA, "w", encoding="utf-8") as f:
+        json.dump(salida, f, ensure_ascii=False, separators=(",", ":"))
