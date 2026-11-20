@@ -1,0 +1,44 @@
+name: Generar Base de Datos de Radares
+
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar osmium-tool
+        run: sudo apt-get update && sudo apt-get install -y osmium-tool
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Descargar extracto de Geofabrik y filtrar radares
+        run: |
+          wget -q https://geofabrik.de
+          osmium tags-filter spain-latest.osm.pbf n/highway=speed_camera -o radares_espana.osm.pbf
+          osmium export radares_espana.osm.pbf -o radares_osm.geojson
+          rm spain-latest.osm.pbf radares_espana.osm.pbf
+
+      - name: Ejecutar fusión y deduplicación
+        run: |
+          python fusionar_radares.py
+          rm radares_osm.geojson
+
+      - name: Guardar radares_unificados.json en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@://github.com"
+          git add radares_unificados.json
+          git commit -m "Actualización automática de radares" || exit 0
+          git push
