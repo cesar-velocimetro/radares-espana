@@ -28,7 +28,7 @@ jobs:
           SUB="download"
           DOM="geofabrik.de"
           RUTA="europe/spain-latest.osm.pbf"
-          curl -sL "https://${SUB}.${DOM}/${RUTA}" -o spain-latest.osm.pbf
+          curl -fL --retry 5 --retry-delay 10 --connect-timeout 30 "https://${SUB}.${DOM}/${RUTA}" -o spain-latest.osm.pbf
           osmium tags-filter spain-latest.osm.pbf n/highway=speed_camera n/enforcement=traffic_signals n/enforcement=stop r/enforcement=average_speed r/enforcement=stop -o radares_espana.osm.pbf
           osmium export radares_espana.osm.pbf -o radares_osm.geojson
           rm spain-latest.osm.pbf radares_espana.osm.pbf
