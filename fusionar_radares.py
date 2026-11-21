@@ -12,6 +12,25 @@ ARCHIVO_SALIDA = "radares_unificados.json"
 
 DISTANCIA_DEDUPLICACION_METROS = 45.0
 
+CARDINALES = {
+    "n": 0, "norte": 0,
+    "nne": 22,
+    "ne": 45, "noreste": 45,
+    "ene": 67,
+    "e": 90, "este": 90,
+    "ese": 112,
+    "se": 135, "sureste": 135,
+    "sse": 157,
+    "s": 180, "sur": 180,
+    "ssw": 202, "sso": 202,
+    "sw": 225, "so": 225, "suroeste": 225,
+    "wsw": 247, "oso": 247,
+    "w": 270, "o": 270, "oeste": 270,
+    "wnw": 292, "ono": 292,
+    "nw": 315, "no": 315, "noroeste": 315,
+    "nnw": 337, "nno": 337
+}
+
 
 def haversine_metros(lat1, lon1, lat2, lon2):
     r = 6371000.0
@@ -20,6 +39,39 @@ def haversine_metros(lat1, lon1, lat2, lon2):
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def calcular_bearing(lat1, lon1, lat2, lon2):
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dlambda = math.radians(lon2 - lon1)
+    y = math.sin(dlambda) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dlambda)
+    angulo = math.degrees(math.atan2(y, x))
+    return int(round((angulo + 360.0) % 360.0)) % 360
+
+
+def diferencia_angular(b1, b2):
+    diff = abs(b1 - b2) % 360
+    return 360 - diff if diff > 180 else diff
+
+
+def extraer_bearing(props):
+    for clave in ("camera:direction", "direction", "bearing", "angle", "course", "heading", "sentido"):
+        val = props.get(clave)
+        if val is None:
+            continue
+        texto = str(val).strip().lower()
+        # Si viene un rango como "90;270" o "forward;backward", tomamos el primer valor numérico si existe
+        primero = texto.split(";").__getitem__(0).strip()
+        if primero in CARDINALES:
+            return CARDINALES.get(primero)
+        match = re.search(r"(-?\d+(?:\.\d+)?)", primero)
+        if match:
+            deg = float(match.group(1))
+            if -360.0 <= deg <= 360.0:
+                return int(round((deg + 360.0) % 360.0)) % 360
+    return None
 
 
 def extraer_velocidad(props):
@@ -78,8 +130,8 @@ def cargar_radares_anunciados():
                     "lon": round(lon, 6),
                     "speed": extraer_velocidad(props),
                     "type": clasificar_tipo(props),
-                    "source": str(props.get("source", "ANUNCIADOS")),
-                    "_raw": json.dumps(props, ensure_ascii=False).lower()
+                    "bearing": extraer_bearing(props),
+                    "source": str(props.get("source", "ANUNCIADOS"))
                 })
     except Exception as e:
         print(f"Aviso: No se pudo cargar Radares Anunciados: {e}")
@@ -108,6 +160,7 @@ def cargar_nap_dgt():
                         "lon": round(lon, 6),
                         "speed": None,
                         "type": "FIJO",
+                        "bearing": None,
                         "source": "DGT_NAP"
                     })
     except Exception as e:
@@ -128,6 +181,7 @@ def cargar_osm_local():
             coords = geom.get("coordinates", [])
             tipo_radar = clasificar_tipo(props)
             velocidad = extraer_velocidad(props)
+            rumbo = extraer_bearing(props)
 
             if tipo_geom == "Point" and len(coords) >= 2:
                 radares.append({
@@ -135,11 +189,13 @@ def cargar_osm_local():
                     "lon": round(float(coords.__getitem__(0)), 6),
                     "speed": velocidad,
                     "type": tipo_radar,
+                    "bearing": rumbo,
                     "source": "OSM"
                 })
     except Exception as e:
         print(f"Aviso: No se pudo leer el GeoJSON de OSM: {e}")
     return radares
+
 
 def emparejar_tramos(radares):
     tramos = [r for r in radares if r.get("type") in ("TRAMO_INICIO", "TRAMO_FIN")]
@@ -170,21 +226,29 @@ def emparejar_tramos(radares):
             mejor_pareja["type"] = "TRAMO_FIN"
             r1["pair_id"] = mejor_pareja.get("id")
             mejor_pareja["pair_id"] = r1.get("id")
+
+            # Calculamos el rumbo exacto del tramo (de inicio a fin)
+            rumbo_tramo = calcular_bearing(
+                r1.get("lat"), r1.get("lon"),
+                mejor_pareja.get("lat"), mejor_pareja.get("lon")
+            )
+            if r1.get("bearing") is None:
+                r1["bearing"] = rumbo_tramo
+            if mejor_pareja.get("bearing") is None:
+                mejor_pareja["bearing"] = rumbo_tramo
+
             ya_emparejados.add(id1)
             ya_emparejados.add(mejor_pareja.get("id"))
 
-    # Los puntos de tramo que no tienen pareja en la fuente pasan a FIJO para que nunca falte un TRAMO_FIN
     for r in tramos:
         if r.get("id") not in ya_emparejados:
             r["type"] = "FIJO"
-
 
 
 def fusionar(listas_priorizadas):
     unificados = []
     for lista in listas_priorizadas:
         for candidato in lista:
-            candidato.pop("_raw", None)
             es_duplicado = False
             for existente in unificados:
                 dist = haversine_metros(
@@ -192,42 +256,15 @@ def fusionar(listas_priorizadas):
                     candidato.get("lat"), candidato.get("lon")
                 )
                 if dist <= DISTANCIA_DEDUPLICACION_METROS:
+                    b_ex = existente.get("bearing")
+                    b_ca = candidato.get("bearing")
+                    # Si ambos tienen rumbo conocido y apuntan en sentidos opuestos (> 120°), NO fusionar
+                    if b_ex is not None and b_ca is not None and diferencia_angular(b_ex, b_ca) > 120:
+                        continue
+
                     es_duplicado = True
                     if existente.get("speed") is None and candidato.get("speed") is not None:
                         existente["speed"] = candidato.get("speed")
+                    if existente.get("bearing") is None and candidato.get("bearing") is not None:
+                        existente["bearing"] = candidato.get("bearing")
                     if existente.get("type") == "FIJO" and candidato.get("type") != "FIJO":
-                        existente["type"] = candidato.get("type")
-                    break
-
-            if not es_duplicado:
-                candidato["id"] = len(unificados) + 1
-                unificados.append(candidato)
-
-    emparejar_tramos(unificados)
-    return unificados
-
-
-if __name__ == "__main__":
-    anunciados = cargar_radares_anunciados()
-    dgt = cargar_nap_dgt()
-    osm = cargar_osm_local()
-
-    resultado = fusionar((anunciados, dgt, osm))
-
-    conteo_tipos = {}
-    for r in resultado:
-        t = r.get("type")
-        conteo_tipos[t] = conteo_tipos.get(t, 0) + 1
-
-    print(f"Anunciados: {len(anunciados)} | DGT: {len(dgt)} | OSM (Iberia): {len(osm)}")
-    print(f"Total únicos: {len(resultado)} -> Desglose por tipo: {conteo_tipos}")
-
-    salida = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "total": len(resultado),
-        "by_type": conteo_tipos,
-        "radars": resultado
-    }
-
-    with open(ARCHIVO_SALIDA, "w", encoding="utf-8") as f:
-        json.dump(salida, f, ensure_ascii=False, separators=(",", ":"))
