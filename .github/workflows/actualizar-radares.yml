@@ -49,17 +49,18 @@ jobs:
 
       - name: Ejecutar fusión y deduplicación
         run: |
-          python fusionar_radares.py
+          python -u fusionar_radares.py
           rm radares_osm.geojson
 
       - name: Guardar radares_unificados.json en el repositorio
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@://github.com"
+          git fetch origin main
+          git reset --soft origin/main
           git add radares_unificados.json
           git commit -m "Actualización automática de radares Iberia" || exit 0
-          git pull --rebase --autostash origin main
-          git push
+          git push origin main
 
       - name: Limpiar ejecuciones antiguas de Actions
         if: always()
