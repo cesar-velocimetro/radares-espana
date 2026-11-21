@@ -258,7 +258,6 @@ def fusionar(listas_priorizadas):
                 if dist <= DISTANCIA_DEDUPLICACION_METROS:
                     b_ex = existente.get("bearing")
                     b_ca = candidato.get("bearing")
-                    # Si ambos tienen rumbo conocido y apuntan en sentidos opuestos (> 120°), NO fusionar
                     if b_ex is not None and b_ca is not None and diferencia_angular(b_ex, b_ca) > 120:
                         continue
 
@@ -268,3 +267,12 @@ def fusionar(listas_priorizadas):
                     if existente.get("bearing") is None and candidato.get("bearing") is not None:
                         existente["bearing"] = candidato.get("bearing")
                     if existente.get("type") == "FIJO" and candidato.get("type") != "FIJO":
+                        existente["type"] = candidato.get("type")
+                    break
+
+            if not es_duplicado:
+                candidato["id"] = len(unificados) + 1
+                unificados.append(candidato)
+
+    emparejar_tramos(unificados)
+    return unificados
