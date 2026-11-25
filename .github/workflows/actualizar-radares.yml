@@ -55,7 +55,7 @@ jobs:
       - name: Guardar radares_unificados.json en el repositorio
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@://github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git reset --soft origin/main
           git add radares_unificados.json
